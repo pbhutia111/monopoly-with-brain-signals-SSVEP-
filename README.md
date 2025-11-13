@@ -1,4 +1,4 @@
-# 🧠� Brain-Controlled Monopoly Bot
+# 🧠Brain-Controlled Monopoly Bot
 
 Play Monopoly using only your **brain signals**! This project uses SSVEP (Steady-State Visual Evoked Potential) brain-computer interface technology to control an automated Monopoly bot through EEG signals, allowing completely hands-free gameplay.
 
@@ -214,50 +214,6 @@ START → PLAYER TURN → [Roll → Buy/OK/Jail] → End Turn → BOT TURN → [
 - Respond via BCI when player input required
 - Transition to player turn when bot finishes
 
-## 🐛 Troubleshooting
-
-**EEG signals not detected:**
-- Check electrode impedance (should be <40kΩ)
-- Ensure good scalp contact with conductive gel
-- Verify BrainFlow is receiving data: check console output
-
-**OCR not working:**
-- Ensure Tesseract is installed and in PATH
-- Verify game window is visible and unobstructed
-- Adjust OCR region coordinates if using different screen resolution
-
-**Flicker boxes not visible:**
-- Check PsychoPy window is focused
-- Verify monitor refresh rate supports frequencies (≥60Hz recommended)
-- Try adjusting window size or position
-
-**Commands not executing:**
-- Verify Arc browser is running and game is loaded
-- Check PyAutoGUI screen coordinates match your display
-- Enable debug logging to see command detection
-
-## 📊 Data Analysis
-
-The `analyze.ipynb` notebook provides tools for:
-- Visualizing raw EEG signals
-- Computing power spectral density (PSD)
-- Analyzing SSVEP response strength
-- Comparing classification accuracy
-- Debugging signal quality issues
-
-## 🤝 Contributing
-
-Contributions welcome! Areas for improvement:
-- Support for additional EEG hardware (Emotiv, NeuroSky, etc.)
-- Improved classification algorithms (xDAWN, TRCA, DNN)
-- Adaptive frequency selection
-- Multi-player support
-- Cross-platform browser automation
-
-## 📝 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
 ## 🙏 Acknowledgments
 
 - OpenBCI for open-source EEG hardware and BrainFlow library
@@ -265,9 +221,6 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - SSVEP-BCI research community for methodology
 - Monopoly game mechanics (Hasbro)
 
-## 📧 Contact
-
-For questions, collaboration, or bug reports, please open an issue on GitHub.
 
 ## 🎓 Research Context
 
@@ -277,7 +230,6 @@ This project was developed as a brain-computer interface experiment demonstratin
 3. Practical application of signal processing techniques
 4. Hands-free human-computer interaction
 
-**Note**: This is a research/educational project. Proper EEG electrode placement, calibration, and signal quality are essential for reliable BCI control. Results may vary based on individual neurophysiology and environmental factors.
 
 ---
 
