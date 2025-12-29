@@ -1,29 +1,16 @@
 #!/usr/bin/env python3
 """
-SSVEP experiment + analysis using BrainFlow (Cyton or Synthetic) + PsychoPy,
-with preprocessing in analysis (drop-onset, band-pass, optional notch).
+SSVEP Brain-Controlled Monopoly using OpenBCI Ganglion + PsychoPy.
+CCA-based frequency detection with bandpass preprocessing.
 
 Install:
-  pip install brainflow psychopy numpy scipy matplotlib pandas
+  pip install brainflow psychopy numpy scipy matplotlib pandas scikit-learn pyautogui
 
-Examples:
-  # Run with CYTON (set your /dev/tty... or COMx)
-  python ssvep_bf_psychopy.py run \
-      --board cyton --serial "/dev/tty.usbserial-XXXX" \
-      --freqs 10 12 15 --trial-sec 10 --rest-sec 5 --reps 3 \
-      --outfile recording_cyton.csv --first-4-channels
-
-  # Run with SYNTHETIC (no hardware)
-  python ssvep_bf_psychopy.py run \
-      --board synthetic \
-      --freqs 10 12 15 --trial-sec 8 --rest-sec 4 --reps 2 \
-      --outfile recording_synth.csv
-
-  # Analyze with preprocessing (band-pass, notch, drop first 0.75 s per block)
-  python ssvep_bf_psychopy.py analyze \
-      --infile recording_cyton.csv --freqs 10 12 15 \
-      --trial-sec 10 --drop-sec 0.75 --bp-low 5 --bp-high 45 --notch 60 \
-      --fmin 3 --fmax 45 --per-target
+Example:
+  python ssvep_experiment.py run \
+      --serial "/dev/tty.usbserial-XXXX" \
+      --freqs 7 13 17 --trial-sec 10 --rest-sec 4 --reps 2 \
+      --outfile recording.csv --first-4-channels
 """
 
 import argparse
@@ -35,9 +22,8 @@ import numpy as np
 from sklearn.cross_decomposition import CCA
 import pandas as pd
 import matplotlib.pyplot as plt
-from scipy.signal import butter, filtfilt, iirnotch, welch
+from scipy.signal import butter, filtfilt, welch
 from scipy.fft import fft, fftfreq
-import matplotlib.pyplot as plt
 
 # BrainFlow
 from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds
@@ -47,21 +33,7 @@ from psychopy import visual, core, event, monitors
 
 import pyautogui
 import os
-from PIL import Image
-import pytesseract
-from pynput import keyboard
 import time
-
-
-# 630 565 (BID)
-# 630, 620 (FOLD)
-
-# 1200 770 (START GAME)
-# 555 425 (ROLL DICE)
-# 410 460 (BUY), 350 620
-# 540 420 (END TURN)
-
-# 324 609 (pay 50 jail)
 
 
 def move_and_click(x, y, delay=0.5):
@@ -71,55 +43,18 @@ def move_and_click(x, y, delay=0.5):
   pyautogui.click()
   time.sleep(0.2)
   pyautogui.click()
-    
-def perform_ocr_on_region(x,y,x2,y2):
-  w = x2 - x
-  h = y2 - y
-  region = (x, y, w, h)
-  print(f"[DEBUG] Performing OCR on region: x={x}, y={y}, x2={x2}, y2={y2} (width={w}, height={h})")
-
-  img = pyautogui.screenshot(region=region)
-
-  img = img.convert("L")
-  img = img.point(lambda x: 0 if x < 128 else 255)  # binarize
-
-  text = pytesseract.image_to_string(img).strip().lower()
-  print(f"[DEBUG] OCR result: '{text}'")
-  return text
-  
-def player_prompt():
-  # roll dice: 255 325 to 680 475
-  text = perform_ocr_on_region(255, 325, 680, 675)
-  if "roll" in text:
-    print("[DEBUG] Player prompt: ROLL")
-    return "roll"
-  elif "pay" in text:   # need jail coord
-    print("[DEBUG] Player prompt: JAIL")
-    return "jail"
-  print(f"[DEBUG] Player prompt: UNKNOWN (text: {text})")
-
-def detect_first_player():
-  print("[DEBUG] Detecting first player")
-  text = perform_ocr_on_region(350, 260, 550, 300) # "SHOE STARTS FIRST"
-  turn = False
-  if "player" in text:
-      turn = True
-  print(f"[DEBUG] Player starts first: {turn}")
-  time.sleep(1)
-  move_and_click(530, 500 , delay=1)  # Click CLOSE
-  return turn
 
 def start_game():
-  move_and_click(1200, 770, delay=1.5)  # Click START GAME
+  move_and_click(1235, 826, delay=1.5)  # Click START GAME
 
 def roll_dice():
-  move_and_click(555, 425, delay=1)  # Click ROLL DICE
+  move_and_click(568, 467, delay=1)  # Click ROLL DICE
    
 def ok():
-  move_and_click(475, 609, delay=1)  # Click OK
+  move_and_click(475, 609, delay=1)  # Click OK (need to update)
 
 def buy():
-  move_and_click(350, 620, delay=1)  # Click BUY
+  move_and_click(348, 665, delay=1)  # Click BUY
     
 def pay_jail(): # pay 20 or roll for doubles
   move_and_click(324, 609, delay=1)  # Click PAY 50
@@ -134,22 +69,20 @@ def reject():
   move_and_click(630, 620, delay=1)  # Click REJECT
   
 def accept():
-  move_and_click(630, 565, delay=1)  # Click ACCEPT
+  move_and_click(630, 565, delay=1)
   
 def end_turn():
-  move_and_click(540, 420, delay=0.5)  # Click END TURN
+  move_and_click(540, 420, delay=0.5)  # Currently unused
   
 def focus_arc():
   print("[DEBUG] Focusing Arc browser")
   os.system('osascript -e \'tell application "Arc" to activate\'')
   
-
 def close():
-    move_and_click(530, 500 , delay=1) # Click CLOSE
-
+  move_and_click(535, 552, delay=1)  # Click CLOSE
 
 def now_s():
-    return time.time()
+  return time.time()
 
 
 # =======================
@@ -208,20 +141,21 @@ def build_targets(win, freqs: List[float]) -> List[FlickerTarget]:
     
     for i, f in enumerate(freqs):
         pos = positions[i]
-        color = ""
+        color = "white"  # Default color for all boxes
         if f == 7:
             color = "red"
-        if f == 9.5:
-            color = "white"
-        if f == 12:
+        elif f == 13:
+            color = "blue"
+        elif f == 17:
             color = "green"
+        
         # Create flicker rectangle
         rect = visual.Rect(
             win, 
             width=box_size, 
             height=box_size, 
-            fillColor="white", 
-            lineColor="white",
+            fillColor=color, 
+            lineColor=color,
             pos=pos, 
             opacity=0.0
         )
@@ -261,28 +195,17 @@ def build_targets(win, freqs: List[float]) -> List[FlickerTarget]:
 
 
 # =======================
-# BrainFlow Recorder
+# BrainFlow Recorder - Ganglion Only
 # =======================
 class BFRecorder:
-    def __init__(self, board: str, serial_port: Optional[str], first_4_channels: bool = False):
+    def __init__(self, serial_port: str, first_4_channels: bool = False):
         self.params = BrainFlowInputParams()
-
-        b = board.lower()
-        if b == "cyton":
-            if not serial_port:
-                raise ValueError("--serial is required for --board cyton")
-            self.params.serial_port = serial_port
-            self.board_id = BoardIds.CYTON_BOARD.value
-        elif b == "ganglion":
-            if not serial_port:
-                raise ValueError("--serial is required for --board ganglion")
-            self.params.serial_port = serial_port
-            self.board_id = BoardIds.GANGLION_BOARD.value
-        elif b == "synthetic":
-            self.board_id = BoardIds.SYNTHETIC_BOARD.value
-        else:
-            raise ValueError("Unknown board. Use --board cyton | synthetic")
-
+        
+        if not serial_port:
+            raise ValueError("--serial is required for Ganglion board")
+        
+        self.params.serial_port = serial_port
+        self.board_id = BoardIds.GANGLION_BOARD.value
         self.board = BoardShim(self.board_id, self.params)
         self.first_4 = first_4_channels
 
@@ -346,17 +269,17 @@ def run_block(win: visual.Window, targets: List[FlickerTarget], block_sec: float
     core.wait(0.1)
 
 
-def run_experiment_with_window(win: visual.Window, board: str, serial_port: Optional[str], 
+def run_experiment_with_window(win: visual.Window, serial_port: str, 
                                 freqs: List[float], trial_sec: float, rest_sec: float, 
                                 reps: int, outfile: str, first_4_channels: bool):
-    """Modified run_experiment that accepts an existing window."""
+    """Run SSVEP experiment with Ganglion board."""
     actual_hz = win.getActualFrameRate(
         nIdentical=20, nMaxFrames=120, nWarmUpFrames=60, threshold=1) or 60.0
     print(f"[INFO] Measured display refresh ~{actual_hz:.2f} Hz")
 
     intro = visual.TextStim(
         win,
-        text=(f"SSVEP ({board})\n\nTargets: {', '.join([f'{f:.1f} Hz' for f in freqs])}\n"
+        text=(f"SSVEP Ganglion\n\nTargets: {', '.join([f'{f:.1f} Hz' for f in freqs])}\n"
               f"Trial {trial_sec:.1f}s | Rest {rest_sec:.1f}s | Reps {reps}\n\n"),
         color='white', height=0.06
     )
@@ -365,11 +288,11 @@ def run_experiment_with_window(win: visual.Window, board: str, serial_port: Opti
 
     targets = build_targets(win, freqs)
 
-    recorder = BFRecorder(board=board, serial_port=serial_port,
+    recorder = BFRecorder(serial_port=serial_port,
                           first_4_channels=first_4_channels)
     
     sr = recorder.get_sr()
-    print(f"[INFO] Board '{board}' streaming at {sr} Hz")
+    print(f"[INFO] Ganglion board streaming at {sr} Hz")
 
     ret_data = []
     try:
@@ -413,7 +336,6 @@ def run_experiment_with_window(win: visual.Window, board: str, serial_port: Opti
 
 
 
-
 # =======================
 # Analysis + Preprocessing
 # =======================
@@ -425,13 +347,6 @@ def butter_bandpass(low, high, fs, order=4):
 
 def apply_bandpass(x, fs, low, high, order=4):
     b, a = butter_bandpass(low, high, fs, order)
-    return filtfilt(b, a, x)
-
-
-def apply_notch(x, fs, notch_hz=60.0, q=30.0):
-    # iirnotch: w0 (rad/s) normalized (f0 / (fs/2))
-    w0 = notch_hz / (fs / 2.0)
-    b, a = iirnotch(w0, Q=q)
     return filtfilt(b, a, x)
 
 
@@ -587,10 +502,8 @@ def analyze_psd(
     CCA-based SSVEP classifier.
     Filters EEG, runs sliding windows, applies CCA for each window,
     then votes across windows to pick best frequency.
-    Returns "a" (7 Hz), "b" (9.5 Hz), or "c" (12 Hz).
+    Returns "a" (7 Hz), "b" (13 Hz), or "c" (17 Hz).
     """
-    bp_low = 5.5
-    bp_high = 15
     eeg_channels = ['EEG1', 'EEG2', 'EEG3', 'EEG4']
     eeg_data = df[eeg_channels].values  # Shape: (n_samples, 4)
 
@@ -604,11 +517,6 @@ def analyze_psd(
         b, a = butter(4, [low, high], btype='band')
         return filtfilt(b, a, data, axis=0)
 
-    def notch_filter(data, freq, fs):
-        nyquist = fs / 2
-        b, a = iirnotch(freq / nyquist, 30)
-        return filtfilt(b, a, data, axis=0)
-    
     def bandstop_filter(data, lowcut, highcut, fs):
         nyquist = fs / 2
         low = lowcut / nyquist
@@ -616,14 +524,14 @@ def analyze_psd(
         b, a = butter(4, [low, high], btype='bandstop')
         return filtfilt(b, a, data, axis=0)
 
-    # Preprocessing
+    # Preprocessing: Bandpass filter + Notch filter for powerline noise
     eeg_filtered = bandpass_filter(eeg_data, bp_low, bp_high, sr)
-    eeg_filtered = notch_filter(eeg_filtered, 60, sr)
+    eeg_filtered = bandstop_filter(eeg_filtered, 58, 62, sr)  # 60 Hz notch
     print(f"Filtered EEG shape: {eeg_filtered.shape}")
 
     # Sliding windows
-    window_size = 600  # 1 second at 200 Hz
-    step_size = 100
+    window_size = 600  # 3 seconds at 200 Hz
+    step_size = 100    # 0.5 seconds overlap
     windows = []
     for start in range(0, len(eeg_filtered) - window_size, step_size):
         end = start + window_size
@@ -640,6 +548,7 @@ def analyze_psd(
     target_freqs = freqs  # use the passed frequencies: [7.0, 9.5, 12.0]
     freq_vote_counts = {f: 0 for f in target_freqs}
 
+    all_corrs = {f: [] for f in target_freqs}
     for window in windows:
         # Y shape: (n_samples, n_channels)
         res = cca_ssvep_predictor(
@@ -652,23 +561,21 @@ def analyze_psd(
         # Pick best frequency for this window
         best_f = max(res.keys(), key=lambda f: res[f]['corr'])
         freq_vote_counts[best_f] += 1
+        for f in target_freqs:
+            all_corrs[f].append(res[f]['corr'])
 
+    # Print average correlations for each frequency
     print(f"CCA vote counts: {freq_vote_counts}")
+    print("Avg correlations:", {f: f"{np.mean(all_corrs[f]):.4f}" for f in target_freqs})
 
     # Majority vote
     best_freq = max(freq_vote_counts.keys(), key=lambda f: freq_vote_counts[f])
     print(f"Best frequency by vote: {best_freq} Hz")
 
-    # Map to "a", "b", "c"
-    if best_freq == 7.0:
-        return "a"
-    elif best_freq == 9.5:
-        return "b"
-    elif best_freq == 12.0:
-        return "c"
-    else:
-        # Fallback if freqs differ
-        return "a"
+    # Map to "a", "b", "c" based on frequency index
+    # freqs[0] -> "a", freqs[1] -> "b", freqs[2] -> "c"
+    freq_to_letter = {freqs[i]: chr(ord('a') + i) for i in range(len(freqs))}
+    return freq_to_letter.get(best_freq, "a")
 
 
 # =======================
@@ -676,17 +583,15 @@ def analyze_psd(
 # =======================
 def main():
     parser = argparse.ArgumentParser(
-        description="SSVEP (BrainFlow + PsychoPy) with Cyton or Synthetic board")
+        description="SSVEP Brain-Controlled Monopoly with OpenBCI Ganglion")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     # Run
-    pr = sub.add_parser("run", help="Run SSVEP experiment and record CSV")
-    pr.add_argument("--board", type=str,
-                    choices=["cyton", "synthetic", "ganglion"], required=True)
-    pr.add_argument("--serial", type=str, default=None,
-                    help="Serial/COM for Cyton (e.g., /dev/tty.usbserial-XXXX or COM3)")
+    pr = sub.add_parser("run", help="Run SSVEP experiment with Ganglion board")
+    pr.add_argument("--serial", type=str, required=True,
+                    help="Serial port for Ganglion (e.g., /dev/tty.usbserial-XXXX)")
     pr.add_argument("--freqs", type=float, nargs="+",
-                    default=[7.0,9.5,12.0], help="Target flicker frequencies (Hz)")
+                    default=[7.0,13.0,17.0], help="Target flicker frequencies (Hz)")
     pr.add_argument("--trial-sec", type=float, default=10.0,
                     help="Seconds per target block")
     pr.add_argument("--rest-sec", type=float, default=5.0,
@@ -700,7 +605,7 @@ def main():
 
     args = parser.parse_args()
     mon = monitors.Monitor('testMonitor')
-    win = visual.Window(size=(1800,1000), fullscr=False, screen=1, color='black', units='norm', monitor=mon)
+    win = visual.Window(size=(1800,1000), fullscr=False, screen=0, color='black', units='norm', monitor=mon)
     
 
     command = ""
@@ -708,7 +613,6 @@ def main():
         print("Trial: ", i)
         data_lst = run_experiment_with_window(
             win=win,
-            board=args.board,
             serial_port=args.serial,
             freqs=args.freqs,
             trial_sec=args.trial_sec,
@@ -724,11 +628,11 @@ def main():
             df=data_lst[0],
             freqs=args.freqs,
             fmin=(args.freqs[0] - 6),
-            fmax=(args.freqs[1] + 6),
+            fmax=(args.freqs[-1] + 10),
             trial_sec=args.trial_sec,
             drop_sec=0.5,
             bp_low=(args.freqs[0] - 1.5),
-            bp_high=(args.freqs[1] + 1.5),
+            bp_high=(args.freqs[-1] + 5),
             notch=60,
             per_target=False,
             welch_sec=2.0
@@ -737,11 +641,11 @@ def main():
             df=data_lst[1],
             freqs=args.freqs,
             fmin=(args.freqs[0] - 6),
-            fmax=(args.freqs[1] + 6),
+            fmax=(args.freqs[-1] + 10),
             trial_sec=args.trial_sec,
             drop_sec=0.5,
             bp_low=(args.freqs[0] - 1.5),
-            bp_high=(args.freqs[1] + 1.5),
+            bp_high=(args.freqs[-1] + 5),
             notch=60,
             per_target=False,
             welch_sec=2.0
@@ -767,7 +671,7 @@ def main():
                 buy()
                 print("ba")
             case "bb":
-                pay_jail()
+                close()
                 print("bb")
                 
             case "bc":
@@ -791,3 +695,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+tha

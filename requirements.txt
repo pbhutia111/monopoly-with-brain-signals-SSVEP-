@@ -11,14 +11,8 @@ matplotlib>=3.7.0
 
 # Game Automation
 pyautogui>=0.9.54
-pytesseract>=0.3.10
-pillow>=10.0.0
-pynput>=1.7.6
 
-# Jupyter for analysis notebooks
-jupyter>=1.0.0
-ipykernel>=6.25.0
-ipywidgets>=8.1.0
-
-# Additional Dependencies
-pyglet>=2.0.0
+# Optional: Jupyter for analysis notebooks
+# jupyter>=1.0.0
+# ipykernel>=6.25.0
+# ipywidgets>=8.1.0
